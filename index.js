@@ -2,7 +2,6 @@ const { webcrypto } = require('crypto');
 global.crypto = webcrypto;
 
 const express = require('express');
-const QRCode = require('qrcode');
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -13,14 +12,10 @@ const app = express();
 app.use(express.json());
 
 let sock;
-let qrCodeData = null;
+let pairingCode = null;
 let isConnected = false;
-let isStarting = false;
 
 async function startWhatsApp() {
-  if (isStarting) return;
-  isStarting = true;
-
   const { state, saveCreds } = await useMultiFileAuthState('./auth');
 
   sock = makeWASocket({
@@ -32,83 +27,62 @@ async function startWhatsApp() {
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', async (update) => {
-    const { connection, qr, lastDisconnect } = update;
-
-    if (qr) {
-      qrCodeData = await QRCode.toDataURL(qr);
-      console.log('📸 QR GERADO → /qr');
-    }
+    const { connection, lastDisconnect } = update;
 
     if (connection === 'open') {
       isConnected = true;
-      qrCodeData = null;
       console.log('✅ WHATSAPP CONECTADO');
     }
 
     if (connection === 'close') {
-      isConnected = false;
-      const reason = lastDisconnect?.error?.output?.statusCode;
-      console.log('❌ Conexão fechada:', reason);
-
-      // 🚫 NÃO reconecta automaticamente
-      console.log('⛔ Aguardando novo deploy para reconectar');
+      const code = lastDisconnect?.error?.output?.statusCode;
+      console.log('❌ Conexão fechada:', code);
     }
   });
+
+  // 🔐 GERA PAIRING CODE
+  if (!state.creds.registered) {
+    pairingCode = await sock.requestPairingCode('5542991288461');
+    console.log('🔑 Pairing Code:', pairingCode);
+  }
 }
 
-/* -------- ROTAS -------- */
+/* ROTAS */
 
 app.get('/', (req, res) => {
   res.send('WhatsApp Engine ON');
 });
 
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    whatsapp: isConnected ? 'connected' : 'disconnected'
-  });
-});
-
-app.get('/qr', (req, res) => {
-  if (qrCodeData) {
-    res.send(`
-      <html>
-        <body style="display:flex;align-items:center;justify-content:center;height:100vh">
-          <img src="${qrCodeData}" />
-        </body>
-      </html>
-    `);
-  } else if (isConnected) {
-    res.send('✅ WhatsApp já conectado');
-  } else {
-    res.send('⏳ QR ainda não gerado');
+app.get('/pair', (req, res) => {
+  if (isConnected) {
+    return res.send('✅ WhatsApp já conectado');
   }
+  if (!pairingCode) {
+    return res.send('⏳ Pairing code ainda não gerado');
+  }
+  res.send(`
+    <h2>Código de Pareamento</h2>
+    <h1>${pairingCode}</h1>
+    <p>WhatsApp → Aparelhos conectados → Conectar dispositivo → Código</p>
+  `);
 });
 
 app.post('/send', async (req, res) => {
   const { phone, message } = req.body;
 
-  if (!phone || !message) {
-    return res.status(400).json({ error: 'phone e message obrigatórios' });
-  }
-
-  if (!sock || !isConnected) {
+  if (!isConnected) {
     return res.status(503).json({ error: 'WhatsApp não conectado' });
   }
 
-  try {
-    const jid = phone.replace(/\D/g, '') + '@s.whatsapp.net';
-    await sock.sendMessage(jid, { text: message });
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  const jid = phone.replace(/\D/g, '') + '@s.whatsapp.net';
+  await sock.sendMessage(jid, { text: message });
+
+  res.json({ success: true });
 });
 
-/* -------- SERVER -------- */
-
+/* SERVER */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log('🚀 Servidor HTTP ON');
+  console.log('🚀 Servidor ON');
   startWhatsApp();
 });

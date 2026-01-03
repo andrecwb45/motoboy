@@ -1,3 +1,8 @@
+// ===== FIX DEFINITIVO PARA BAILEYS =====
+const { webcrypto } = require('crypto')
+global.crypto = webcrypto
+// =====================================
+
 const express = require('express')
 const {
   default: makeWASocket,
@@ -8,7 +13,7 @@ const {
 const app = express()
 app.use(express.json())
 
-// evita cache 304 no Railway
+// evita cache 304
 app.use((req, res, next) => {
   res.setHeader('Cache-Control', 'no-store')
   next()
@@ -53,7 +58,7 @@ async function startWhatsApp() {
   isConnecting = false
 }
 
-// ===== ROTA DE PAREAMENTO POR CÓDIGO (OFICIAL) =====
+// ===== PAREAMENTO POR CÓDIGO (OFICIAL) =====
 app.get('/pair-code', async (req, res) => {
   await startWhatsApp()
 
@@ -62,29 +67,30 @@ app.get('/pair-code', async (req, res) => {
   }
 
   try {
-    // 🔴 TROQUE PARA SEU NÚMERO
+    // 🔴 COLOQUE SEU NÚMERO AQUI
     const phoneNumber = '5542991288461' // ex: 5511999999999
 
     const code = await sock.requestPairingCode(phoneNumber)
 
     res.send(`
       <html>
-        <body style="font-family:sans-serif;text-align:center;padding-top:50px">
+        <body style="font-family:sans-serif;text-align:center;padding-top:40px">
           <h2>Código de pareamento</h2>
           <h1 style="letter-spacing:6px">${code}</h1>
           <p>
-            WhatsApp → Dispositivos conectados →  
-            Conectar com número de telefone
+            WhatsApp → Dispositivos conectados<br/>
+            → Conectar com número de telefone
           </p>
         </body>
       </html>
     `)
   } catch (err) {
+    console.error(err)
     res.send('Erro ao gerar código: ' + err.message)
   }
 })
 
-// ===== ENVIO DE MENSAGEM (n8n / Mocha) =====
+// ===== ENVIO DE MENSAGEM =====
 app.post('/send', async (req, res) => {
   const { phone, message } = req.body
 
@@ -107,7 +113,7 @@ app.post('/send', async (req, res) => {
   }
 })
 
-// ===== HEALTHCHECK =====
+// ===== HEALTH =====
 app.get('/', (_, res) => {
   res.send('WhatsApp Engine ON')
 })

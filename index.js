@@ -1,3 +1,8 @@
+import { webcrypto } from 'crypto';
+globalThis.crypto = webcrypto;
+
+import makeWASocket from '@whiskeysockets/baileys';
+import express from 'express';
 const express = require('express');
 const qrcode = require('qrcode-terminal');
 const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');

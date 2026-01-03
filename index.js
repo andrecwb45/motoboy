@@ -4,16 +4,15 @@ global.crypto = webcrypto;
 const express = require('express');
 const {
   default: makeWASocket,
-  useMultiFileAuthState,
-  DisconnectReason
+  useMultiFileAuthState
 } = require('@whiskeysockets/baileys');
 
 const app = express();
 app.use(express.json());
 
 let sock;
+let isReady = false;
 let pairingCode = null;
-let isConnected = false;
 
 async function startWhatsApp() {
   const { state, saveCreds } = await useMultiFileAuthState('./auth');
@@ -26,25 +25,19 @@ async function startWhatsApp() {
 
   sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect } = update;
+  sock.ev.on('connection.update', (update) => {
+    const { connection } = update;
 
     if (connection === 'open') {
-      isConnected = true;
-      console.log('✅ WHATSAPP CONECTADO');
+      isReady = true;
+      console.log('✅ WhatsApp socket pronto');
     }
 
     if (connection === 'close') {
-      const code = lastDisconnect?.error?.output?.statusCode;
-      console.log('❌ Conexão fechada:', code);
+      isReady = false;
+      console.log('⚠️ Conexão fechada, aguardando reconexão');
     }
   });
-
-  // 🔐 GERA PAIRING CODE
-  if (!state.creds.registered) {
-    pairingCode = await sock.requestPairingCode('5542991288461');
-    console.log('🔑 Pairing Code:', pairingCode);
-  }
 }
 
 /* ROTAS */
@@ -53,24 +46,30 @@ app.get('/', (req, res) => {
   res.send('WhatsApp Engine ON');
 });
 
-app.get('/pair', (req, res) => {
-  if (isConnected) {
-    return res.send('✅ WhatsApp já conectado');
+app.get('/pair', async (req, res) => {
+  if (!sock) {
+    return res.send('⏳ Socket ainda iniciando');
   }
+
+  if (!isReady) {
+    return res.send('⏳ WhatsApp ainda conectando, aguarde 10s e recarregue');
+  }
+
   if (!pairingCode) {
-    return res.send('⏳ Pairing code ainda não gerado');
+    pairingCode = await sock.requestPairingCode('55SEUNUMEROAQUI');
+    console.log('🔑 Pairing Code:', pairingCode);
   }
+
   res.send(`
-    <h2>Código de Pareamento</h2>
     <h1>${pairingCode}</h1>
-    <p>WhatsApp → Aparelhos conectados → Conectar dispositivo → Código</p>
+    <p>WhatsApp → Aparelhos conectados → Conectar com código</p>
   `);
 });
 
 app.post('/send', async (req, res) => {
   const { phone, message } = req.body;
 
-  if (!isConnected) {
+  if (!isReady) {
     return res.status(503).json({ error: 'WhatsApp não conectado' });
   }
 
@@ -83,6 +82,6 @@ app.post('/send', async (req, res) => {
 /* SERVER */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log('🚀 Servidor ON');
+  console.log('🚀 Servidor HTTP ON');
   startWhatsApp();
 });

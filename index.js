@@ -63,7 +63,7 @@ app.get('/pair-code', async (req, res) => {
 
   try {
     // 🔴 TROQUE PARA SEU NÚMERO
-    const phoneNumber = '55DDDNÚMERO' // ex: 5511999999999
+    const phoneNumber = '5542991288461' // ex: 5511999999999
 
     const code = await sock.requestPairingCode(phoneNumber)
 

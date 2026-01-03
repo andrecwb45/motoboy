@@ -1,13 +1,3 @@
-/**
- * FIXES APLICADOS:
- * - crypto definido corretamente (Node 18+)
- * - CommonJS puro (sem misturar import/require)
- * - QR não impresso no terminal
- * - Processo não morre enquanto espera QR
- * - Endpoint /qr para escanear no Railway
- * - Auto-reconnect defensivo
- */
-
 const { webcrypto } = require('crypto');
 global.crypto = webcrypto;
 
@@ -22,73 +12,80 @@ const {
 const app = express();
 app.use(express.json());
 
-let sock = null;
-let lastQR = null;
+let sock;
+let qrCodeData = null;
+let isConnected = false;
 
-/* =========================
-   START WHATSAPP
-========================= */
 async function startWhatsApp() {
   const { state, saveCreds } = await useMultiFileAuthState('./auth');
 
   sock = makeWASocket({
     auth: state,
     printQRInTerminal: false,
-    browser: ['Ubuntu', 'Chrome', '22.04']
+    browser: ['Railway', 'Chrome', '1.0.0']
   });
 
   sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', (update) => {
+  sock.ev.on('connection.update', async (update) => {
     const { connection, qr, lastDisconnect } = update;
 
     if (qr) {
-      lastQR = qr;
-      console.log('📲 QR gerado — disponível em /qr');
+      qrCodeData = await QRCode.toDataURL(qr);
+      console.log('📸 QR gerado, acesse /qr');
     }
 
     if (connection === 'open') {
+      isConnected = true;
+      qrCodeData = null;
       console.log('✅ WhatsApp conectado com sucesso');
-      lastQR = null;
     }
 
     if (connection === 'close') {
-      const shouldReconnect =
-        lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+      isConnected = false;
+      const reason = lastDisconnect?.error?.output?.statusCode;
 
-      console.log('⚠️ Conexão fechada. Reconnect:', shouldReconnect);
+      console.log('⚠️ Conexão fechada:', reason);
 
-      if (shouldReconnect) {
-        setTimeout(startWhatsApp, 5000);
+      if (reason !== DisconnectReason.loggedOut) {
+        console.log('🔄 Tentando reconectar...');
+        setTimeout(startWhatsApp, 3000);
+      } else {
+        console.log('❌ Sessão inválida, delete a pasta auth e gere novo QR');
       }
     }
   });
 }
 
-/* =========================
-   ENDPOINT QR
-========================= */
-app.get('/qr', async (req, res) => {
-  if (!lastQR) {
-    return res.status(404).json({
-      success: false,
-      message: 'QR não disponível. WhatsApp já conectado ou aguardando.'
-    });
-  }
+/* ---------- ROTAS ---------- */
 
-  const qrImage = await QRCode.toDataURL(lastQR);
-  res.send(`
-    <html>
-      <body style="display:flex;align-items:center;justify-content:center;height:100vh">
-        <img src="${qrImage}" />
-      </body>
-    </html>
-  `);
+// Health check (Railway)
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    whatsapp: isConnected ? 'connected' : 'disconnected'
+  });
 });
 
-/* =========================
-   SEND MESSAGE
-========================= */
+// QR via navegador
+app.get('/qr', (req, res) => {
+  if (qrCodeData) {
+    res.send(`
+      <html>
+        <body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh">
+          <h2>Escaneie o QR Code</h2>
+          <img src="${qrCodeData}" />
+        </body>
+      </html>
+    `);
+  } else if (isConnected) {
+    res.send('✅ WhatsApp já está conectado');
+  } else {
+    res.send('⏳ QR ainda não gerado, aguarde...');
+  }
+});
+
+// Envio de mensagens
 app.post('/send', async (req, res) => {
   const { phone, message } = req.body;
 
@@ -99,10 +96,10 @@ app.post('/send', async (req, res) => {
     });
   }
 
-  if (!sock) {
+  if (!sock || !isConnected) {
     return res.status(503).json({
       success: false,
-      error: 'WhatsApp ainda não conectado'
+      error: 'WhatsApp não conectado'
     });
   }
 
@@ -119,12 +116,11 @@ app.post('/send', async (req, res) => {
   }
 });
 
-/* =========================
-   SERVER
-========================= */
+/* ---------- SERVER ---------- */
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 WhatsApp Engine rodando na porta ${PORT}`);
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
   startWhatsApp();
 });

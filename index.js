@@ -1,8 +1,6 @@
-import { webcrypto } from 'crypto';
-globalThis.crypto = webcrypto;
+const { webcrypto } = require('crypto');
+global.crypto = webcrypto;
 
-import makeWASocket from '@whiskeysockets/baileys';
-import express from 'express';
 const express = require('express');
 const qrcode = require('qrcode-terminal');
 const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
@@ -26,8 +24,9 @@ async function startWhatsApp() {
     if (update.qr) {
       qrcode.generate(update.qr, { small: true });
     }
+
     if (update.connection === 'open') {
-      console.log('✅ WhatsApp conectado');
+      console.log('✅ WhatsApp conectado com sucesso');
     }
   });
 }
@@ -36,19 +35,23 @@ app.post('/send', async (req, res) => {
   const { phone, message } = req.body;
 
   if (!phone || !message) {
-    return res.status(400).json({ error: 'phone e message são obrigatórios' });
+    return res.status(400).json({
+      success: false,
+      error: 'phone e message são obrigatórios'
+    });
   }
 
   try {
     const jid = phone + '@s.whatsapp.net';
     await sock.sendMessage(jid, { text: message });
-    res.json({ success: true, phone });
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
   console.log(`🚀 WhatsApp Engine rodando na porta ${PORT}`);
   startWhatsApp();

@@ -1,6 +1,7 @@
-import express from 'express'
-import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys'
-import QRCode from 'qrcode'
+const express = require('express')
+const makeWASocket = require('@whiskeysockets/baileys').default
+const { useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys')
+const QRCode = require('qrcode')
 
 const app = express()
 app.use(express.json())
@@ -14,7 +15,7 @@ async function startWhatsApp() {
   sock = makeWASocket({
     auth: state,
     browser: ['Chrome', 'Linux', 'Desktop'],
-    generateHighQualityLinkPreview: true
+    printQRInTerminal: false
   })
 
   sock.ev.on('creds.update', saveCreds)
